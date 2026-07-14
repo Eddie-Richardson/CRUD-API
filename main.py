@@ -1,5 +1,5 @@
-from fastapi import FastAPI, HTTPException, status
-from typing import List, Dict
+from fastapi import FastAPI, status
+from typing import List, Dict, Optional
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,17 @@ tasks: List[Dict] = [
 
 class TaskCreate(BaseModel):
     title: str = ""
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(None, description="Updated title")
+    done: Optional[bool] = Field(None, description="Updated done status")
+
+
+def find_task_index(task_id: int) -> int:
+    for i, task in enumerate(tasks):
+        if task["id"] == task_id:
+            return i
+    return -1
 
 @app.get("/")
 async def root():
@@ -50,3 +61,31 @@ async def create_task(task: TaskCreate):
     tasks.append(new_task)
 
     return JSONResponse(status_code=201, content=new_task)
+
+@app.put("/tasks/{id}")
+async def update_task(id: int, updates: TaskUpdate):
+    idx = find_task_index(id)
+    if idx == -1:
+        return JSONResponse(status_code=404, content={"error": f"Task with id {id} not found"})
+
+    if updates.title is None and updates.done is None:
+        return JSONResponse(status_code=400, content={"error": "No valid fields to update"})
+
+    if updates.title is not None:
+        if not updates.title.strip():
+            return JSONResponse(status_code=400, content={"error": "Title cannot be empty or whitespace"})
+        tasks[idx]["title"] = updates.title.strip()
+
+    if updates.done is not None:
+        tasks[idx]["done"] = updates.done
+
+    return tasks[idx]
+
+
+@app.delete("/tasks/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_task(id: int):
+    idx = find_task_index(id)
+    if idx == -1:
+        return JSONResponse(status_code=404, content={"error": f"Task with id {id} not found"})
+    tasks.pop(idx)
+    return None
