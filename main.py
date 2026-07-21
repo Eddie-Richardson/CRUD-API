@@ -4,8 +4,9 @@
 Task API.
 
 Exposes CRUD endpoints for tasks, all backed by the SQLite database.
-The in-memory list used in earlier stages has been fully replaced.
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, status, Depends
 from typing import Optional
@@ -15,18 +16,25 @@ from sqlalchemy.orm import Session
 
 from database import Task, init_db, get_db
 
-app = FastAPI()
 
-
-@app.on_event("startup")
-def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Initializes the SQLite database and seeds example tasks if empty.
+    Initializes the SQLite database on startup and seeds example tasks
+    if empty. Replaces the deprecated on_event("startup") handler.
+
+    Args:
+        app: the FastAPI application instance
 
     Returns:
-        None
+        None: yields control to the running app, no cleanup needed on
+            shutdown for this app
     """
     init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 class TaskCreate(BaseModel):
@@ -51,8 +59,7 @@ def task_to_dict(task: Task) -> dict:
         task: the SQLAlchemy Task instance to convert
 
     Returns:
-        dict: the task's id, title, and done fields, matching the shape
-            the API returned when tasks lived in the in-memory list
+        dict: the task's id, title, and done fields
     """
     return {"id": task.id, "title": task.title, "done": task.done}
 
