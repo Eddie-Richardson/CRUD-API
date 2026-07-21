@@ -3,17 +3,18 @@
 """
 Task API.
 
-Exposes CRUD endpoints for tasks. Stage 0 initializes the SQLite database
-on startup; the endpoints below still read and write the in-memory list
-and are migrated to the database in later stages.
+Exposes CRUD endpoints for tasks. GET endpoints read from the SQLite
+database; POST/PUT/DELETE still operate on the in-memory list and are
+migrated to the database in Stage 2 and Stage 3.
 """
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, status, Depends
 from typing import List, Dict, Optional
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from database import init_db
+from database import Task, init_db, get_db
 
 app = FastAPI()
 
@@ -66,6 +67,20 @@ def find_task_index(task_id: int) -> int:
     return -1
 
 
+def task_to_dict(task: Task) -> dict:
+    """
+    Converts a Task database row into a plain dict.
+
+    Args:
+        task: the SQLAlchemy Task instance to convert
+
+    Returns:
+        dict: the task's id, title, and done fields, matching the shape
+            the API returned when tasks lived in the in-memory list
+    """
+    return {"id": task.id, "title": task.title, "done": task.done}
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -94,23 +109,28 @@ async def health():
 
 
 @app.get("/tasks")
-async def get_all_tasks():
+async def get_all_tasks(db: Session = Depends(get_db)):
     """
-    Lists every task.
+    Lists every task from the database.
+
+    Args:
+        db: database session, injected by FastAPI
 
     Returns:
-        list[dict]: all tasks currently in memory
+        list[dict]: all tasks currently stored in SQLite
     """
-    return tasks
+    tasks = db.query(Task).all()
+    return [task_to_dict(t) for t in tasks]
 
 
 @app.get("/tasks/{id}")
-async def get_task(id: int):
+async def get_task(id: int, db: Session = Depends(get_db)):
     """
-    Fetches a single task by id.
+    Fetches a single task by id from the database.
 
     Args:
         id: the task id to look up
+        db: database session, injected by FastAPI
 
     Returns:
         dict: the matching task
@@ -118,10 +138,10 @@ async def get_task(id: int):
     Raises:
         JSONResponse: 404 if no task with that id exists
     """
-    for task in tasks:
-        if task["id"] == id:
-            return task
-    return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+    task = db.query(Task).filter(Task.id == id).first()
+    if task is None:
+        return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+    return task_to_dict(task)
 
 
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
