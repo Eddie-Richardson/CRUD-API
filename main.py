@@ -3,9 +3,9 @@
 """
 Task API.
 
-Exposes CRUD endpoints for tasks. GET endpoints read from the SQLite
-database; POST/PUT/DELETE still operate on the in-memory list and are
-migrated to the database in Stage 2 and Stage 3.
+Exposes CRUD endpoints for tasks. GET and POST read from and write to the
+SQLite database; PUT/DELETE still operate on the in-memory list and are
+migrated to the database in Stage 3.
 """
 
 from fastapi import FastAPI, status, Depends
@@ -145,12 +145,13 @@ async def get_task(id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
-async def create_task(task: TaskCreate):
+async def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     """
-    Creates a new task.
+    Creates a new task in the database.
 
     Args:
         task: the task title to create
+        db: database session, injected by FastAPI
 
     Returns:
         JSONResponse: 201 with the created task, or 400 if the title is
@@ -162,15 +163,12 @@ async def create_task(task: TaskCreate):
             content={"error": "Title cannot be empty or whitespace"}
         )
 
-    next_id = max((t["id"] for t in tasks), default=0) + 1
-    new_task = {
-        "id": next_id,
-        "title": task.title.strip(),
-        "done": False
-    }
-    tasks.append(new_task)
+    new_task = Task(title=task.title.strip(), done=False)
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
 
-    return JSONResponse(status_code=201, content=new_task)
+    return JSONResponse(status_code=201, content=task_to_dict(new_task))
 
 
 @app.put("/tasks/{id}")
