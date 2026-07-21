@@ -8,7 +8,9 @@ session factory, and the Task table definition. main.py never writes SQL
 directly, it asks this module for a session and works with Task objects.
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean
+from datetime import datetime, timezone
+
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # ---------------------------------------------------------------------------
@@ -21,6 +23,17 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
+def utcnow() -> datetime:
+    """
+    Returns the current UTC time.
+
+    Returns:
+        datetime: current time, timezone-aware, in UTC
+    """
+    return datetime.now(timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # Table definition
 # ---------------------------------------------------------------------------
@@ -32,6 +45,8 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     done = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 
 # ---------------------------------------------------------------------------

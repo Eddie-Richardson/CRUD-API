@@ -30,11 +30,24 @@ The API will be running at `http://localhost:8000`. On first run, `tasks.db` is 
 |--------|----------------|-------------------------------------|
 | GET    | `/`            | API metadata                       |
 | GET    | `/health`      | Health check                       |
-| GET    | `/tasks`       | List all tasks                     |
+| GET    | `/tasks`       | List tasks (supports search, filter, sort — see below) |
 | GET    | `/tasks/{id}`  | Get a single task by ID            |
+| GET    | `/stats`       | Task counts (total, done, not done)|
 | POST   | `/tasks`       | Create a new task                  |
 | PUT    | `/tasks/{id}`  | Update a task's title and/or done  |
 | DELETE | `/tasks/{id}`  | Delete a task                      |
+
+### Query parameters on `GET /tasks`
+
+| Param    | Example                  | Description                                      |
+|----------|--------------------------|---------------------------------------------------|
+| `search` | `?search=milk`           | Case-insensitive partial match on title           |
+| `done`   | `?done=true`             | Filter to only done (`true`) or not-done (`false`) tasks |
+| `sort`   | `?sort=title`            | Sort results alphabetically by title              |
+
+These can be combined, e.g. `GET /tasks?search=o&done=false&sort=title`.
+
+Every task also includes `created_at` and `updated_at` timestamps (ISO 8601, UTC). `updated_at` changes on any PUT; `created_at` never changes after creation.
 
 ## Example request
 
@@ -49,7 +62,7 @@ server: uvicorn
 content-length: 40
 content-type: application/json
 
-{"id":4,"title":"Buy milk","done":false}
+{"id":4,"title":"Buy milk","done":false,"created_at":"2026-07-14T02:54:09.123456","updated_at":"2026-07-14T02:54:09.123456"}
 ```
 
 ## Swagger UI

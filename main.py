@@ -4,6 +4,8 @@
 Task API.
 
 Exposes CRUD endpoints for tasks, all backed by the SQLite database.
+Supports searching, filtering by done status, alphabetical sorting, and
+a /stats endpoint for aggregate counts.
 """
 
 from contextlib import asynccontextmanager
@@ -12,6 +14,7 @@ from fastapi import FastAPI, status, Depends
 from typing import Optional
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import Task, init_db, get_db
@@ -21,7 +24,7 @@ from database import Task, init_db, get_db
 async def lifespan(app: FastAPI):
     """
     Initializes the SQLite database on startup and seeds example tasks
-    if empty. Replaces the deprecated on_event("startup") handler.
+    if empty.
 
     Args:
         app: the FastAPI application instance
@@ -59,9 +62,16 @@ def task_to_dict(task: Task) -> dict:
         task: the SQLAlchemy Task instance to convert
 
     Returns:
-        dict: the task's id, title, and done fields
+        dict: the task's id, title, done, created_at, and updated_at
+            fields, with timestamps in ISO 8601 format
     """
-    return {"id": task.id, "title": task.title, "done": task.done}
+    return {
+        "id": task.id,
+        "title": task.title,
+        "done": task.done,
+        "created_at": task.created_at.isoformat(),
+        "updated_at": task.updated_at.isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -91,18 +101,57 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/tasks")
-async def get_all_tasks(db: Session = Depends(get_db)):
+@app.get("/stats")
+async def get_stats(db: Session = Depends(get_db)):
     """
-    Lists every task from the database.
+    Returns aggregate counts of tasks using SQL's COUNT(), not Python.
 
     Args:
         db: database session, injected by FastAPI
 
     Returns:
-        list[dict]: all tasks currently stored in SQLite
+        dict: total, done, and not-done task counts
     """
-    tasks = db.query(Task).all()
+    total = db.query(func.count(Task.id)).scalar()
+    done = db.query(func.count(Task.id)).filter(Task.done.is_(True)).scalar()
+    return {"total": total, "done": done, "not_done": total - done}
+
+
+@app.get("/tasks")
+async def get_all_tasks(
+    search: Optional[str] = None,
+    done: Optional[bool] = None,
+    sort: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Lists tasks from the database, with optional search, filtering, and
+    sorting.
+
+    Args:
+        search: if provided, only tasks whose title contains this text
+            (case-insensitive) are returned
+        done: if provided, only tasks matching this done status are
+            returned
+        sort: if set to "title", results are ordered alphabetically by
+            title; otherwise results are returned in default (id) order
+        db: database session, injected by FastAPI
+
+    Returns:
+        list[dict]: matching tasks
+    """
+    query = db.query(Task)
+
+    if search:
+        query = query.filter(Task.title.ilike(f"%{search}%"))
+
+    if done is not None:
+        query = query.filter(Task.done.is_(done))
+
+    if sort == "title":
+        query = query.order_by(Task.title.asc())
+
+    tasks = query.all()
     return [task_to_dict(t) for t in tasks]
 
 
