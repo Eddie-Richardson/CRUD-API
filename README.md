@@ -1,10 +1,10 @@
 # Task API
 
-A small CRUD API built with FastAPI that manages an in-memory to-do list. Supports creating, reading, updating, and deleting tasks, with interactive documentation via Swagger UI.
+A small CRUD API built with FastAPI that manages a to-do list, backed by a SQLite database. Supports creating, reading, updating, and deleting tasks, with interactive documentation via Swagger UI.
 
 ## What this is
 
-This API demonstrates the four CRUD operations (Create, Read, Update, Delete) mapped onto HTTP methods (POST, GET, PUT, DELETE). Tasks are stored in memory only — data resets whenever the server restarts.
+This API demonstrates the four CRUD operations (Create, Read, Update, Delete) mapped onto HTTP methods (POST, GET, PUT, DELETE). Tasks are stored in a SQLite database (`tasks.db`), so data survives server restarts.
 
 ## How to run it
 
@@ -22,7 +22,7 @@ Start the server:
 fastapi dev main.py
 ```
 
-The API will be running at `http://localhost:8000`.
+The API will be running at `http://localhost:8000`. On first run, `tasks.db` is created automatically in the project root, and 3 example tasks are seeded.
 
 ## Endpoints
 
@@ -58,6 +58,23 @@ FastAPI automatically generates interactive API documentation at `/docs`. The fu
 
 ![Swagger UI screenshot](./swagger-screenshot.png)
 
+## Persistence
+
+Tasks are stored in a SQLite database instead of an in-memory list.
+
+**Why SQLite:** it requires no separate database server, just a single file on disk. That means anyone cloning this repo can run the project immediately with no setup beyond installing Python dependencies, which fits a project this size. SQLAlchemy handles the connection and queries (`database.py`), so swapping to a different database later (Postgres, for example) would mean changing one connection string, not rewriting the API.
+
+**Where it's stored:** `tasks.db`, created automatically in the project root the first time the app starts. It's excluded from version control via `.gitignore`.
+
+**Example query**, run directly against `tasks.db` in DB Browser for SQLite:
+
+```sql
+SELECT * FROM tasks WHERE done = 1;
+```
+
+![DB Browser screenshot](./db-browser-screenshot.png)
+
 ## Notes
 
-- Data is in-memory only — restarting the server resets tasks back to the 3 seed examples. Persistence is introduced in a later stage.
+- Data now persists in SQLite across server restarts. The seed tasks are only inserted once, on the very first run against an empty database.
+- Known limitation: there's no concurrency control yet if two clients tried to update the same task at the same time. Not an issue with a single user, but something to add before this runs with multiple people accessing it.
