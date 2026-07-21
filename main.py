@@ -3,13 +3,12 @@
 """
 Task API.
 
-Exposes CRUD endpoints for tasks. GET and POST read from and write to the
-SQLite database; PUT/DELETE still operate on the in-memory list and are
-migrated to the database in Stage 3.
+Exposes CRUD endpoints for tasks, all backed by the SQLite database.
+The in-memory list used in earlier stages has been fully replaced.
 """
 
 from fastapi import FastAPI, status, Depends
-from typing import List, Dict, Optional
+from typing import Optional
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -30,13 +29,6 @@ def on_startup():
     init_db()
 
 
-tasks: List[Dict] = [
-        {"id": 1, "title": "Buy groceries", "done": False},
-        {"id": 2, "title": "Finish project", "done": True},
-        {"id": 3, "title": "Call plumber", "done": False}
-        ]
-
-
 class TaskCreate(BaseModel):
     title: str = ""
 
@@ -49,22 +41,6 @@ class TaskUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def find_task_index(task_id: int) -> int:
-    """
-    Finds the position of a task in the in-memory list by id.
-
-    Args:
-        task_id: the id of the task to find
-
-    Returns:
-        int: the index of the matching task, or -1 if no task has that id
-    """
-    for i, task in enumerate(tasks):
-        if task["id"] == task_id:
-            return i
-    return -1
 
 
 def task_to_dict(task: Task) -> dict:
@@ -172,13 +148,14 @@ async def create_task(task: TaskCreate, db: Session = Depends(get_db)):
 
 
 @app.put("/tasks/{id}")
-async def update_task(id: int, updates: TaskUpdate):
+async def update_task(id: int, updates: TaskUpdate, db: Session = Depends(get_db)):
     """
-    Updates a task's title and/or done status.
+    Updates a task's title and/or done status in the database.
 
     Args:
         id: the task id to update
         updates: the fields to change, either may be omitted
+        db: database session, injected by FastAPI
 
     Returns:
         dict: the updated task
@@ -187,8 +164,8 @@ async def update_task(id: int, updates: TaskUpdate):
         JSONResponse: 404 if the task doesn't exist, 400 if no valid
             fields were provided or the title is empty/whitespace
     """
-    idx = find_task_index(id)
-    if idx == -1:
+    task = db.query(Task).filter(Task.id == id).first()
+    if task is None:
         return JSONResponse(status_code=404, content={"error": f"Task with id {id} not found"})
 
     if updates.title is None and updates.done is None:
@@ -197,21 +174,25 @@ async def update_task(id: int, updates: TaskUpdate):
     if updates.title is not None:
         if not updates.title.strip():
             return JSONResponse(status_code=400, content={"error": "Title cannot be empty or whitespace"})
-        tasks[idx]["title"] = updates.title.strip()
+        task.title = updates.title.strip()
 
     if updates.done is not None:
-        tasks[idx]["done"] = updates.done
+        task.done = updates.done
 
-    return tasks[idx]
+    db.commit()
+    db.refresh(task)
+
+    return task_to_dict(task)
 
 
 @app.delete("/tasks/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(id: int):
+async def delete_task(id: int, db: Session = Depends(get_db)):
     """
-    Deletes a task by id.
+    Deletes a task by id from the database.
 
     Args:
         id: the task id to delete
+        db: database session, injected by FastAPI
 
     Returns:
         None: 204 on success
@@ -219,8 +200,9 @@ async def delete_task(id: int):
     Raises:
         JSONResponse: 404 if the task doesn't exist
     """
-    idx = find_task_index(id)
-    if idx == -1:
+    task = db.query(Task).filter(Task.id == id).first()
+    if task is None:
         return JSONResponse(status_code=404, content={"error": f"Task with id {id} not found"})
-    tasks.pop(idx)
+    db.delete(task)
+    db.commit()
     return None
